@@ -6,89 +6,219 @@
 <title>Auto Sudoku Solver</title>
 <style>
   :root {
-    --line: #2b2f36;
-    --thick: #0b0c0e;
-    --given: #0b0c0e;
-    --solved: #2563eb;
-    --bg: #f6f7f9;
-    --cell: #ffffff;
-    --accent: #2563eb;
+    --ink: #1e2230;
+    --given: #1b2440;
+    --solved: #4f46e5;
+    --accent: #4f46e5;
+    --accent-2: #7c3aed;
+    --line-thick: #334155;   /* shows in the gaps between 3x3 boxes */
+    --line-thin: #d9def0;    /* shows in the gaps between cells */
+    --box-a: #ffffff;        /* checkerboard tint A for a 3x3 box */
+    --box-b: #eef1ff;        /* checkerboard tint B for a 3x3 box */
+    --ok: #15803d;
+    --err: #dc2626;
   }
   * { box-sizing: border-box; }
+
   body {
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    background: var(--bg);
-    color: #14171c;
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    color: var(--ink);
     margin: 0;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     padding: 32px 16px;
+    background: linear-gradient(135deg, #eef2ff 0%, #f6f0ff 50%, #fdf2f8 100%);
+    background-size: 200% 200%;
+    animation: drift 18s ease-in-out infinite;
   }
-  h1 { font-size: 1.4rem; margin: 0 0 4px; }
-  p.sub { margin: 0 0 20px; color: #5b626b; font-size: .9rem; }
+  @keyframes drift {
+    0%, 100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+  }
+
+  header { text-align: center; animation: rise .6s cubic-bezier(.2,.8,.2,1) both; }
+  h1 {
+    font-size: clamp(1.5rem, 6vw, 2rem);
+    margin: 0 0 4px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    letter-spacing: -.5px;
+  }
+  p.sub { margin: 0 0 22px; color: #6b7280; font-size: .95rem; }
+
+  /* ---- Board: 3x3 grid of boxes, each box a 3x3 grid of cells ---- */
   #board {
     display: grid;
-    grid-template-columns: repeat(9, 1fr);
-    width: min(92vw, 460px);
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;                       /* thick separators between 3x3 boxes */
+    width: min(92vw, 480px);
     aspect-ratio: 1;
-    background: var(--thick);
-    border: 3px solid var(--thick);
-    gap: 1px;
+    padding: 10px;
+    background: var(--line-thick);
+    border-radius: 18px;
+    box-shadow:
+      0 20px 45px -20px rgba(79, 70, 229, .45),
+      0 6px 16px -8px rgba(0, 0, 0, .25);
+    animation: rise .7s cubic-bezier(.2,.8,.2,1) both;
+    animation-delay: .08s;
   }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(18px) scale(.98); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  .box {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;                       /* thin separators between cells */
+    background: var(--line-thin);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(30, 34, 48, .12);
+    transition: box-shadow .2s ease, transform .2s ease;
+  }
+  /* Checkerboard the 9 boxes so each subgrid reads as a distinct block. */
+  .box:nth-child(odd)  .cell { background: var(--box-a); }
+  .box:nth-child(even) .cell { background: var(--box-b); }
+  .box:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(79,70,229,.22); }
+
   .cell {
-    background: var(--cell);
     border: none;
-    font-size: clamp(1rem, 5vw, 1.6rem);
-    font-weight: 600;
-    text-align: center;
-    color: var(--given);
     outline: none;
     width: 100%;
     height: 100%;
     padding: 0;
+    text-align: center;
+    font-size: clamp(1.05rem, 5.2vw, 1.7rem);
+    font-weight: 700;
+    color: var(--given);
+    caret-color: var(--accent);
+    transition: background .15s ease, color .2s ease, transform .12s ease;
   }
-  .cell:focus { background: #e8f0fe; }
-  .cell.solved { color: var(--solved); font-weight: 500; }
-  /* Thick lines between 3x3 boxes. */
-  .cell[data-c="2"], .cell[data-c="5"] { margin-right: 1px; box-shadow: 2px 0 0 0 var(--thick); }
-  .cell[data-r="2"], .cell[data-r="5"] { margin-bottom: 1px; box-shadow: 0 2px 0 0 var(--thick); }
-  .cell[data-r="2"][data-c="2"], .cell[data-r="2"][data-c="5"],
-  .cell[data-r="5"][data-c="2"], .cell[data-r="5"][data-c="5"] {
-    box-shadow: 2px 0 0 0 var(--thick), 0 2px 0 0 var(--thick);
+  .cell::placeholder { color: transparent; }
+  .cell:hover { background: #e4e9ff !important; }
+  .cell:focus {
+    background: #dbe2ff !important;
+    transform: scale(1.06);
+    box-shadow: inset 0 0 0 2px var(--accent);
+    border-radius: 6px;
+    z-index: 1;
+    position: relative;
   }
-  .controls { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; justify-content: center; }
+  /* A freshly typed digit gives a little bump. */
+  .cell.bump { animation: bump .25s ease; }
+  @keyframes bump {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.22); }
+    100% { transform: scale(1); }
+  }
+  /* Numbers the solver filled in: indigo, lighter weight, pop into place. */
+  .cell.solved { color: var(--solved); font-weight: 600; }
+  .cell.pop { animation: pop .45s cubic-bezier(.2,.9,.3,1.3) both; }
+  @keyframes pop {
+    0%   { opacity: 0; transform: scale(.3) rotate(-12deg); }
+    60%  { opacity: 1; transform: scale(1.18) rotate(3deg); }
+    100% { opacity: 1; transform: scale(1) rotate(0); }
+  }
+
+  /* Celebration sweep + conflict shake on the board. */
+  #board.celebrate { animation: rise .7s both, glow 1.1s ease .1s; }
+  @keyframes glow {
+    0%   { box-shadow: 0 0 0 0 rgba(124,58,237,.0), 0 20px 45px -20px rgba(79,70,229,.45); }
+    35%  { box-shadow: 0 0 0 10px rgba(124,58,237,.28), 0 20px 45px -20px rgba(79,70,229,.6); }
+    100% { box-shadow: 0 0 0 0 rgba(124,58,237,.0), 0 20px 45px -20px rgba(79,70,229,.45); }
+  }
+  #board.shake { animation: shake .5s cubic-bezier(.36,.07,.19,.97) both; }
+  @keyframes shake {
+    10%, 90% { transform: translateX(-2px); }
+    20%, 80% { transform: translateX(4px); }
+    30%, 50%, 70% { transform: translateX(-8px); }
+    40%, 60% { transform: translateX(8px); }
+  }
+  .cell.conflict { animation: flashred .6s ease both; }
+  @keyframes flashred {
+    0%, 100% { background: var(--box-a); }
+    50% { background: #ffd9d9 !important; color: var(--err); }
+  }
+
+  /* ---- Controls ---- */
+  .controls { display: flex; gap: 12px; margin-top: 22px; flex-wrap: wrap; justify-content: center; }
   button {
     font: inherit;
-    font-weight: 600;
-    padding: 10px 18px;
-    border-radius: 8px;
-    border: 1px solid #d0d4da;
-    background: #fff;
+    font-weight: 700;
+    padding: 12px 24px;
+    border-radius: 12px;
+    border: none;
     cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
   }
-  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  button:active { transform: translateY(1px); }
-  #status { margin-top: 14px; min-height: 1.2em; font-size: .9rem; color: #5b626b; }
-  #status.error { color: #c0392b; }
-  #status.ok { color: #1e7e34; }
-  .samples { margin-top: 18px; font-size: .85rem; color: #5b626b; }
-  .samples a { color: var(--accent); cursor: pointer; text-decoration: underline; }
+  button:active { transform: translateY(1px) scale(.98); }
+  button.primary {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 20px -8px rgba(79,70,229,.7);
+  }
+  button.primary:hover { transform: translateY(-2px); box-shadow: 0 12px 26px -8px rgba(79,70,229,.8); filter: brightness(1.05); }
+  button.ghost {
+    color: var(--accent);
+    background: rgba(255,255,255,.7);
+    box-shadow: inset 0 0 0 1.5px rgba(79,70,229,.3);
+  }
+  button.ghost:hover { background: #fff; transform: translateY(-2px); }
+  button:disabled { opacity: .6; cursor: progress; transform: none; }
+  /* Ripple on click. */
+  .ripple {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255,255,255,.55);
+    transform: scale(0);
+    animation: ripple .55s ease-out;
+    pointer-events: none;
+  }
+  @keyframes ripple { to { transform: scale(4); opacity: 0; } }
+
+  #status {
+    margin-top: 16px;
+    min-height: 1.4em;
+    font-size: .95rem;
+    font-weight: 600;
+    color: #6b7280;
+    transition: color .2s ease;
+  }
+  #status.show { animation: rise .3s ease both; }
+  #status.error { color: var(--err); }
+  #status.ok { color: var(--ok); }
+
+  .samples { margin-top: 14px; font-size: .88rem; color: #6b7280; }
+  .samples a { color: var(--accent); cursor: pointer; font-weight: 600; text-decoration: none; border-bottom: 1.5px dashed rgba(79,70,229,.5); }
+  .samples a:hover { border-bottom-style: solid; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
-  <h1>Auto Sudoku Solver</h1>
-  <p class="sub">Type the known numbers into the cells, then press Solve.</p>
+  <header>
+    <h1>Auto Sudoku Solver</h1>
+    <p class="sub">Type the numbers you know into the grid, then press Solve.</p>
+  </header>
 
-  <div id="board"></div>
+  <div id="board" aria-label="Sudoku grid"></div>
 
   <div class="controls">
     <button id="solve" class="primary">Solve</button>
-    <button id="clear">Clear</button>
+    <button id="clear" class="ghost">Clear</button>
   </div>
 
-  <div id="status"></div>
+  <div id="status" aria-live="polite"></div>
   <div class="samples">Need a puzzle? <a id="sample">Load a sample</a></div>
 
 <script>
@@ -97,11 +227,17 @@
 const SIZE = 9, BOX = 3, EMPTY = 0;
 const board = document.getElementById("board");
 const statusEl = document.getElementById("status");
-const cells = [];
+const cells = new Array(SIZE * SIZE);
 
-// Build the 9x9 grid of single-character inputs.
-for (let r = 0; r < SIZE; r++) {
-  for (let c = 0; c < SIZE; c++) {
+// Build nine 3x3 boxes, each holding nine cells. Cells are stored in the
+// `cells` array by their global (row, col) so the rest of the code is unchanged.
+for (let bi = 0; bi < 9; bi++) {
+  const boxEl = document.createElement("div");
+  boxEl.className = "box";
+  const boxRow = Math.floor(bi / 3), boxCol = bi % 3;
+  for (let ci = 0; ci < 9; ci++) {
+    const r = boxRow * 3 + Math.floor(ci / 3);
+    const c = boxCol * 3 + (ci % 3);
     const input = document.createElement("input");
     input.className = "cell";
     input.type = "text";
@@ -111,9 +247,10 @@ for (let r = 0; r < SIZE; r++) {
     input.dataset.c = c;
     input.addEventListener("input", onInput);
     input.addEventListener("keydown", onKeydown);
-    board.appendChild(input);
-    cells.push(input);
+    boxEl.appendChild(input);
+    cells[r * SIZE + c] = input;
   }
+  board.appendChild(boxEl);
 }
 
 function cellAt(r, c) { return cells[r * SIZE + c]; }
@@ -121,7 +258,12 @@ function cellAt(r, c) { return cells[r * SIZE + c]; }
 function onInput(e) {
   const v = e.target.value.replace(/[^1-9]/g, "");
   e.target.value = v;
-  e.target.classList.remove("solved");
+  e.target.classList.remove("solved", "pop");
+  if (v) {
+    e.target.classList.remove("bump");
+    void e.target.offsetWidth;          // restart the animation
+    e.target.classList.add("bump");
+  }
   setStatus("", "");
 }
 
@@ -135,13 +277,14 @@ function onKeydown(e) {
     if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
       e.preventDefault();
       cellAt(nr, nc).focus();
+      cellAt(nr, nc).select();
     }
   }
 }
 
 function setStatus(msg, kind) {
   statusEl.textContent = msg;
-  statusEl.className = kind || "";
+  statusEl.className = msg ? "show " + (kind || "") : "";
 }
 
 function readGrid() {
@@ -157,15 +300,32 @@ function readGrid() {
   return grid;
 }
 
+// Reveal the solved numbers with a diagonal wave of little pops.
 function writeSolution(grid) {
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
       const cell = cellAt(r, c);
       if (!cell.value) {
         cell.value = grid[r][c];
-        cell.classList.add("solved");
+        cell.classList.add("solved", "pop");
+        cell.style.animationDelay = ((r + c) * 45) + "ms";
       }
     }
+  }
+  board.classList.remove("celebrate");
+  void board.offsetWidth;
+  board.classList.add("celebrate");
+}
+
+function flashConflict(positions) {
+  board.classList.remove("shake");
+  void board.offsetWidth;
+  board.classList.add("shake");
+  for (const [r, c] of positions) {
+    const cell = cellAt(r, c);
+    cell.classList.remove("conflict");
+    void cell.offsetWidth;
+    cell.classList.add("conflict");
   }
 }
 
@@ -184,7 +344,9 @@ function isLegal(grid, row, col, value) {
   return true;
 }
 
-function validate(grid) {
+// Returns the conflicting cell positions, or [] if the clues are consistent.
+function findConflicts(grid) {
+  const bad = [];
   for (let r = 0; r < SIZE; r++) {
     for (let c = 0; c < SIZE; c++) {
       const v = grid[r][c];
@@ -192,10 +354,10 @@ function validate(grid) {
       grid[r][c] = EMPTY;
       const ok = isLegal(grid, r, c, v);
       grid[r][c] = v;
-      if (!ok) return `The ${v} at row ${r + 1}, column ${c + 1} conflicts with another cell.`;
+      if (!ok) bad.push([r, c]);
     }
   }
-  return null;
+  return bad;
 }
 
 function boxFill(grid, br, bc) {
@@ -269,21 +431,57 @@ function solve(grid) {
 
 // ---- Wiring ----
 
-document.getElementById("solve").addEventListener("click", () => {
+function ripple(e) {
+  const btn = e.currentTarget;
+  const circle = document.createElement("span");
+  const d = Math.max(btn.clientWidth, btn.clientHeight);
+  circle.className = "ripple";
+  circle.style.width = circle.style.height = d + "px";
+  const rect = btn.getBoundingClientRect();
+  circle.style.left = (e.clientX - rect.left - d / 2) + "px";
+  circle.style.top = (e.clientY - rect.top - d / 2) + "px";
+  btn.appendChild(circle);
+  setTimeout(() => circle.remove(), 600);
+}
+
+const solveBtn = document.getElementById("solve");
+const clearBtn = document.getElementById("clear");
+[solveBtn, clearBtn].forEach(b => b.addEventListener("click", ripple));
+
+solveBtn.addEventListener("click", () => {
   const grid = readGrid();
-  const conflict = validate(grid);
-  if (conflict) { setStatus(conflict, "error"); return; }
-  if (solve(grid)) {
-    writeSolution(grid);
-    setStatus("Solved!", "ok");
-  } else {
-    setStatus("This puzzle has no solution.", "error");
+  const conflicts = findConflicts(grid);
+  if (conflicts.length) {
+    flashConflict(conflicts);
+    setStatus("Some numbers conflict — fix the highlighted cells.", "error");
+    return;
   }
+  // Give the button a "thinking" beat so the UI feels responsive.
+  solveBtn.disabled = true;
+  solveBtn.textContent = "Solving…";
+  setStatus("Working through the grid…", "");
+  setTimeout(() => {
+    const ok = solve(grid);
+    solveBtn.disabled = false;
+    solveBtn.textContent = "Solve";
+    if (ok) {
+      writeSolution(grid);
+      setStatus("Solved! ✨", "ok");
+    } else {
+      board.classList.remove("shake"); void board.offsetWidth; board.classList.add("shake");
+      setStatus("This puzzle has no solution.", "error");
+    }
+  }, 120);
 });
 
-document.getElementById("clear").addEventListener("click", () => {
-  for (const cell of cells) { cell.value = ""; cell.classList.remove("solved"); }
+clearBtn.addEventListener("click", () => {
+  for (const cell of cells) {
+    cell.value = "";
+    cell.classList.remove("solved", "pop", "bump", "conflict");
+    cell.style.animationDelay = "";
+  }
   setStatus("", "");
+  cellAt(0, 0).focus();
 });
 
 document.getElementById("sample").addEventListener("click", () => {
@@ -291,12 +489,16 @@ document.getElementById("sample").addEventListener("click", () => {
     "53..7...." + "6..195..." + ".98....6." +
     "8...6...3" + "4..8.3..1" + "7...2...6" +
     ".6....28." + "...419..5" + "....8..79";
-  for (let i = 0; i < sample.length; i++) {
-    const ch = sample[i];
-    cells[i].value = ch === "." ? "" : ch;
-    cells[i].classList.remove("solved");
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const ch = sample[r * SIZE + c];
+      const cell = cellAt(r, c);
+      cell.value = ch === "." ? "" : ch;
+      cell.classList.remove("solved", "pop", "conflict");
+      cell.style.animationDelay = "";
+    }
   }
-  setStatus("Sample loaded - press Solve.", "");
+  setStatus("Sample loaded — press Solve.", "");
 });
 </script>
 </body>
