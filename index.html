@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auto Sudoku Solver</title>
+<style>
+  :root {
+    --ink: #1e2230;
+    --given: #1b2440;
+    --solved: #4f46e5;
+    --accent: #4f46e5;
+    --accent-2: #7c3aed;
+    --line-thick: #334155;   /* shows in the gaps between 3x3 boxes */
+    --line-thin: #d9def0;    /* shows in the gaps between cells */
+    --box-a: #ffffff;        /* checkerboard tint A for a 3x3 box */
+    --box-b: #eef1ff;        /* checkerboard tint B for a 3x3 box */
+    --ok: #15803d;
+    --err: #dc2626;
+  }
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    color: var(--ink);
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    background: linear-gradient(135deg, #eef2ff 0%, #f6f0ff 50%, #fdf2f8 100%);
+    background-size: 200% 200%;
+    animation: drift 18s ease-in-out infinite;
+  }
+  @keyframes drift {
+    0%, 100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+  }
+
+  header { text-align: center; animation: rise .6s cubic-bezier(.2,.8,.2,1) both; }
+  h1 {
+    font-size: clamp(1.5rem, 6vw, 2rem);
+    margin: 0 0 4px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    letter-spacing: -.5px;
+  }
+  p.sub { margin: 0 0 22px; color: #6b7280; font-size: .95rem; }
+
+  /* ---- Board: 3x3 grid of boxes, each box a 3x3 grid of cells ---- */
+  #board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;                       /* thick separators between 3x3 boxes */
+    width: min(92vw, 480px);
+    aspect-ratio: 1;
+    padding: 10px;
+    background: var(--line-thick);
+    border-radius: 18px;
+    box-shadow:
+      0 20px 45px -20px rgba(79, 70, 229, .45),
+      0 6px 16px -8px rgba(0, 0, 0, .25);
+    animation: rise .7s cubic-bezier(.2,.8,.2,1) both;
+    animation-delay: .08s;
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(18px) scale(.98); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  .box {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;                       /* thin separators between cells */
+    background: var(--line-thin);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(30, 34, 48, .12);
+    transition: box-shadow .2s ease, transform .2s ease;
+  }
+  /* Checkerboard the 9 boxes so each subgrid reads as a distinct block. */
+  .box:nth-child(odd)  .cell { background: var(--box-a); }
+  .box:nth-child(even) .cell { background: var(--box-b); }
+  .box:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(79,70,229,.22); }
+
+  .cell {
+    border: none;
+    outline: none;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    text-align: center;
+    font-size: clamp(1.05rem, 5.2vw, 1.7rem);
+    font-weight: 700;
+    color: var(--given);
+    caret-color: var(--accent);
+    transition: background .15s ease, color .2s ease, transform .12s ease;
+  }
+  .cell::placeholder { color: transparent; }
+  .cell:hover { background: #e4e9ff !important; }
+  .cell:focus {
+    background: #dbe2ff !important;
+    transform: scale(1.06);
+    box-shadow: inset 0 0 0 2px var(--accent);
+    border-radius: 6px;
+    z-index: 1;
+    position: relative;
+  }
+  /* A freshly typed digit gives a little bump. */
+  .cell.bump { animation: bump .25s ease; }
+  @keyframes bump {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.22); }
+    100% { transform: scale(1); }
+  }
+  /* Numbers the solver filled in: indigo, lighter weight, pop into place. */
+  .cell.solved { color: var(--solved); font-weight: 600; }
+  .cell.pop { animation: pop .45s cubic-bezier(.2,.9,.3,1.3) both; }
+  @keyframes pop {
+    0%   { opacity: 0; transform: scale(.3) rotate(-12deg); }
+    60%  { opacity: 1; transform: scale(1.18) rotate(3deg); }
+    100% { opacity: 1; transform: scale(1) rotate(0); }
+  }
+
+  /* Celebration sweep + conflict shake on the board. */
+  #board.celebrate { animation: rise .7s both, glow 1.1s ease .1s; }
+  @keyframes glow {
+    0%   { box-shadow: 0 0 0 0 rgba(124,58,237,.0), 0 20px 45px -20px rgba(79,70,229,.45); }
+    35%  { box-shadow: 0 0 0 10px rgba(124,58,237,.28), 0 20px 45px -20px rgba(79,70,229,.6); }
+    100% { box-shadow: 0 0 0 0 rgba(124,58,237,.0), 0 20px 45px -20px rgba(79,70,229,.45); }
+  }
+  #board.shake { animation: shake .5s cubic-bezier(.36,.07,.19,.97) both; }
+  @keyframes shake {
+    10%, 90% { transform: translateX(-2px); }
+    20%, 80% { transform: translateX(4px); }
+    30%, 50%, 70% { transform: translateX(-8px); }
+    40%, 60% { transform: translateX(8px); }
+  }
+  .cell.conflict { animation: flashred .6s ease both; }
+  @keyframes flashred {
+    0%, 100% { background: var(--box-a); }
+    50% { background: #ffd9d9 !important; color: var(--err); }
+  }
+
+  /* ---- Controls ---- */
+  .controls { display: flex; gap: 12px; margin-top: 22px; flex-wrap: wrap; justify-content: center; }
+  button {
+    font: inherit;
+    font-weight: 700;
+    padding: 12px 24px;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: transform .12s ease, box-shadow .2s ease, filter .2s ease;
+  }
+  button:active { transform: translateY(1px) scale(.98); }
+  button.primary {
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 8px 20px -8px rgba(79,70,229,.7);
+  }
+  button.primary:hover { transform: translateY(-2px); box-shadow: 0 12px 26px -8px rgba(79,70,229,.8); filter: brightness(1.05); }
+  button.ghost {
+    color: var(--accent);
+    background: rgba(255,255,255,.7);
+    box-shadow: inset 0 0 0 1.5px rgba(79,70,229,.3);
+  }
+  button.ghost:hover { background: #fff; transform: translateY(-2px); }
+  button:disabled { opacity: .6; cursor: progress; transform: none; }
+  /* Ripple on click. */
+  .ripple {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255,255,255,.55);
+    transform: scale(0);
+    animation: ripple .55s ease-out;
+    pointer-events: none;
+  }
+  @keyframes ripple { to { transform: scale(4); opacity: 0; } }
+
+  #status {
+    margin-top: 16px;
+    min-height: 1.4em;
+    font-size: .95rem;
+    font-weight: 600;
+    color: #6b7280;
+    transition: color .2s ease;
+  }
+  #status.show { animation: rise .3s ease both; }
+  #status.error { color: var(--err); }
+  #status.ok { color: var(--ok); }
+
+  .samples { margin-top: 14px; font-size: .88rem; color: #6b7280; }
+  .samples a { color: var(--accent); cursor: pointer; font-weight: 600; text-decoration: none; border-bottom: 1.5px dashed rgba(79,70,229,.5); }
+  .samples a:hover { border-bottom-style: solid; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Auto Sudoku Solver</h1>
+    <p class="sub">Type the numbers you know into the grid, then press Solve.</p>
+  </header>
+
+  <div id="board" aria-label="Sudoku grid"></div>
+
+  <div class="controls">
+    <button id="solve" class="primary">Solve</button>
+    <button id="clear" class="ghost">Clear</button>
+  </div>
+
+  <div id="status" aria-live="polite"></div>
+  <div class="samples">Need a puzzle? <a id="sample">Load a sample</a></div>
+
+<script>
+"use strict";
+
+const SIZE = 9, BOX = 3, EMPTY = 0;
+const board = document.getElementById("board");
+const statusEl = document.getElementById("status");
+const cells = new Array(SIZE * SIZE);
+
+// Build nine 3x3 boxes, each holding nine cells. Cells are stored in the
+// `cells` array by their global (row, col) so the rest of the code is unchanged.
+for (let bi = 0; bi < 9; bi++) {
+  const boxEl = document.createElement("div");
+  boxEl.className = "box";
+  const boxRow = Math.floor(bi / 3), boxCol = bi % 3;
+  for (let ci = 0; ci < 9; ci++) {
+    const r = boxRow * 3 + Math.floor(ci / 3);
+    const c = boxCol * 3 + (ci % 3);
+    const input = document.createElement("input");
+    input.className = "cell";
+    input.type = "text";
+    input.inputMode = "numeric";
+    input.maxLength = 1;
+    input.dataset.r = r;
+    input.dataset.c = c;
+    input.addEventListener("input", onInput);
+    input.addEventListener("keydown", onKeydown);
+    boxEl.appendChild(input);
+    cells[r * SIZE + c] = input;
+  }
+  board.appendChild(boxEl);
+}
+
+function cellAt(r, c) { return cells[r * SIZE + c]; }
+
+function onInput(e) {
+  const v = e.target.value.replace(/[^1-9]/g, "");
+  e.target.value = v;
+  e.target.classList.remove("solved", "pop");
+  if (v) {
+    e.target.classList.remove("bump");
+    void e.target.offsetWidth;          // restart the animation
+    e.target.classList.add("bump");
+  }
+  setStatus("", "");
+}
+
+// Arrow-key navigation between cells.
+function onKeydown(e) {
+  const r = +e.target.dataset.r, c = +e.target.dataset.c;
+  const moves = { ArrowUp: [r - 1, c], ArrowDown: [r + 1, c],
+                  ArrowLeft: [r, c - 1], ArrowRight: [r, c + 1] };
+  if (moves[e.key]) {
+    const [nr, nc] = moves[e.key];
+    if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+      e.preventDefault();
+      cellAt(nr, nc).focus();
+      cellAt(nr, nc).select();
+    }
+  }
+}
+
+function setStatus(msg, kind) {
+  statusEl.textContent = msg;
+  statusEl.className = msg ? "show " + (kind || "") : "";
+}
+
+function readGrid() {
+  const grid = [];
+  for (let r = 0; r < SIZE; r++) {
+    const row = [];
+    for (let c = 0; c < SIZE; c++) {
+      const v = cellAt(r, c).value;
+      row.push(v ? +v : EMPTY);
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+// Reveal the solved numbers with a diagonal wave of little pops.
+function writeSolution(grid) {
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const cell = cellAt(r, c);
+      if (!cell.value) {
+        cell.value = grid[r][c];
+        cell.classList.add("solved", "pop");
+        cell.style.animationDelay = ((r + c) * 45) + "ms";
+      }
+    }
+  }
+  board.classList.remove("celebrate");
+  void board.offsetWidth;
+  board.classList.add("celebrate");
+}
+
+function flashConflict(positions) {
+  board.classList.remove("shake");
+  void board.offsetWidth;
+  board.classList.add("shake");
+  for (const [r, c] of positions) {
+    const cell = cellAt(r, c);
+    cell.classList.remove("conflict");
+    void cell.offsetWidth;
+    cell.classList.add("conflict");
+  }
+}
+
+// ---- Solver (same density / confidence strategy as the Python version) ----
+
+function isLegal(grid, row, col, value) {
+  for (let i = 0; i < SIZE; i++) {
+    if (grid[row][i] === value || grid[i][col] === value) return false;
+  }
+  const br = Math.floor(row / BOX) * BOX, bc = Math.floor(col / BOX) * BOX;
+  for (let r = br; r < br + BOX; r++) {
+    for (let c = bc; c < bc + BOX; c++) {
+      if (grid[r][c] === value) return false;
+    }
+  }
+  return true;
+}
+
+// Returns the conflicting cell positions, or [] if the clues are consistent.
+function findConflicts(grid) {
+  const bad = [];
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const v = grid[r][c];
+      if (v === EMPTY) continue;
+      grid[r][c] = EMPTY;
+      const ok = isLegal(grid, r, c, v);
+      grid[r][c] = v;
+      if (!ok) bad.push([r, c]);
+    }
+  }
+  return bad;
+}
+
+function boxFill(grid, br, bc) {
+  let n = 0;
+  for (let r = br; r < br + BOX; r++)
+    for (let c = bc; c < bc + BOX; c++)
+      if (grid[r][c] !== EMPTY) n++;
+  return n;
+}
+
+function rowColDensity(grid, row, col) {
+  let n = 0;
+  for (let c = 0; c < SIZE; c++) if (grid[row][c] !== EMPTY) n++;
+  for (let r = 0; r < SIZE; r++) if (grid[r][col] !== EMPTY) n++;
+  return n;
+}
+
+// Pick the most-constrained empty cell: fewest candidates (highest
+// confidence) first, then densest box, then densest row/column. Forced cells
+// (a single candidate) are taken immediately, and a cell with no candidate is
+// returned at once so the search backtracks.
+function selectCell(grid) {
+  let bestCell = null, bestKey = null;
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      if (grid[r][c] !== EMPTY) continue;
+      let count = 0;
+      for (let v = 1; v <= SIZE; v++) if (isLegal(grid, r, c, v)) count++;
+      if (count === 0) return [r, c];
+      const br = Math.floor(r / BOX) * BOX, bc = Math.floor(c / BOX) * BOX;
+      // Compare [count, -boxFill, -rowColDensity]; smaller is better.
+      const key = [count, -boxFill(grid, br, bc), -rowColDensity(grid, r, c)];
+      if (!bestKey || lessKey(key, bestKey)) {
+        bestKey = key; bestCell = [r, c];
+        if (count === 1) return bestCell;
+      }
+    }
+  }
+  return bestCell;
+}
+
+function lessKey(a, b) {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return a[i] < b[i];
+  }
+  return false;
+}
+
+function candidates(grid, row, col) {
+  const legal = [];
+  for (let v = 1; v <= SIZE; v++) if (isLegal(grid, row, col, v)) legal.push(v);
+  if (!legal.length) return [];
+  const confidence = 1 / legal.length;
+  return legal.map(v => ({ value: v, confidence }));
+}
+
+function solve(grid) {
+  const cell = selectCell(grid);
+  if (!cell) return true;
+  const [row, col] = cell;
+  const cands = candidates(grid, row, col);
+  if (!cands.length) return false;
+  cands.sort((a, b) => b.confidence - a.confidence);
+  for (const cand of cands) {
+    grid[row][col] = cand.value;
+    if (solve(grid)) return true;
+    grid[row][col] = EMPTY; // backtrack, try next confidence number
+  }
+  return false;
+}
+
+// ---- Wiring ----
+
+function ripple(e) {
+  const btn = e.currentTarget;
+  const circle = document.createElement("span");
+  const d = Math.max(btn.clientWidth, btn.clientHeight);
+  circle.className = "ripple";
+  circle.style.width = circle.style.height = d + "px";
+  const rect = btn.getBoundingClientRect();
+  circle.style.left = (e.clientX - rect.left - d / 2) + "px";
+  circle.style.top = (e.clientY - rect.top - d / 2) + "px";
+  btn.appendChild(circle);
+  setTimeout(() => circle.remove(), 600);
+}
+
+const solveBtn = document.getElementById("solve");
+const clearBtn = document.getElementById("clear");
+[solveBtn, clearBtn].forEach(b => b.addEventListener("click", ripple));
+
+solveBtn.addEventListener("click", () => {
+  const grid = readGrid();
+  const conflicts = findConflicts(grid);
+  if (conflicts.length) {
+    flashConflict(conflicts);
+    setStatus("Some numbers conflict — fix the highlighted cells.", "error");
+    return;
+  }
+  // Give the button a "thinking" beat so the UI feels responsive.
+  solveBtn.disabled = true;
+  solveBtn.textContent = "Solving…";
+  setStatus("Working through the grid…", "");
+  setTimeout(() => {
+    const ok = solve(grid);
+    solveBtn.disabled = false;
+    solveBtn.textContent = "Solve";
+    if (ok) {
+      writeSolution(grid);
+      setStatus("Solved! ✨", "ok");
+    } else {
+      board.classList.remove("shake"); void board.offsetWidth; board.classList.add("shake");
+      setStatus("This puzzle has no solution.", "error");
+    }
+  }, 120);
+});
+
+clearBtn.addEventListener("click", () => {
+  for (const cell of cells) {
+    cell.value = "";
+    cell.classList.remove("solved", "pop", "bump", "conflict");
+    cell.style.animationDelay = "";
+  }
+  setStatus("", "");
+  cellAt(0, 0).focus();
+});
+
+document.getElementById("sample").addEventListener("click", () => {
+  const sample =
+    "53..7...." + "6..195..." + ".98....6." +
+    "8...6...3" + "4..8.3..1" + "7...2...6" +
+    ".6....28." + "...419..5" + "....8..79";
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const ch = sample[r * SIZE + c];
+      const cell = cellAt(r, c);
+      cell.value = ch === "." ? "" : ch;
+      cell.classList.remove("solved", "pop", "conflict");
+      cell.style.animationDelay = "";
+    }
+  }
+  setStatus("Sample loaded — press Solve.", "");
+});
+</script>
+</body>
+</html>
